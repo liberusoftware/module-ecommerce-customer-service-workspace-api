@@ -1,0 +1,30 @@
+{
+    "name": "ecommerce-customer-service-workspace-api",
+    "version": "0.1.0",
+    "description": "HTTP adapter over the customer service workspace module: the queue an agent works, the conversation a customer resumes with the claim they were issued, the transcript, the notes, the assembled timeline and the service quality measured about all of it.",
+    "category": "adapter",
+    "provider": "Liberu\\Ecommerce\\CustomerServiceWorkspace\\Api\\CustomerServiceWorkspaceApiServiceProvider",
+    "requires": {
+        "packages": {
+            "liberusoftware/ecommerce-customer-service-workspace": "^0.1"
+        }
+    },
+    "features": [
+        "Every route carries a rate limit, including the two the host left open: the transcript and the customer's own record are throttled by the surface, because the domain has no request to count",
+        "There are two actor families and one mechanical split: an agent arrives with a credential and an ability, a participant arrives with the claim the module issued, and no route serves both",
+        "The merchant is never accepted from a path, a query string or a body: an agent's comes from the credential, a participant's from a request attribute the host's channel middleware resolved",
+        "The claim is returned once, in the body of the response that opened the conversation, and no other response ever carries it",
+        "The claim travels in a header and never in a path or a query string, so it does not land in an access log or a Referer",
+        "There is no idempotency key on opening a conversation: serving a retry would mean serving a one-time secret twice",
+        "All nine refusal reasons the domain can return are classified, asserted exhaustive by test, so a tenth cannot arrive as a 500",
+        "A refused action request answers 4xx or 5xx with the persisted request beside the error, because the workspace asked and the record exists whatever the owning module said",
+        "A timeline with a source nobody bound answers 200 naming that source in `skipped`, never an entry list that looks complete",
+        "Queue position null means not queued and is never rendered as zero or as first",
+        "The three service figures are null when the thing has not happened, and null is never rendered as zero: an unanswered conversation is not instant service",
+        "A score out of range is the domain's refusal and not the surface's validation rule, so the range lives in one place",
+        "Another merchant's reference, one that does not exist and a claim that does not match are one 404 with one body",
+        "An agent assigns themselves and the agent reference comes from the credential: there is no route that names another agent",
+        "The queue listing carries no name and no email, because an agent who has not opened a conversation has no reason to read them",
+        "OpenAPI 3.1 kept in parity with the router in both directions, including the ability each operation enforces and the throttle every one of them carries"
+    ]
+}
