@@ -43,17 +43,17 @@ resolved; the participant is named by the host; the reference and the claim are 
 |---|---|
 | `GET queue` | The conversations waiting, in arrival order, naming nobody |
 | `GET conversations/{reference}` | An agent's working view, with the queue position |
-| `GET|POST conversations/{reference}/messages` | The transcript, and an agent's line in it |
+| `GET` and `POST conversations/{reference}/messages` | The transcript, and an agent's line in it |
 | `POST conversations/{reference}/{assignment,resolution,abandonment}` | The three moves an agent makes |
 | `POST conversations/{reference}/read-receipts` | Marking the other side's lines read |
 | `GET conversations/{reference}/measurement`, `GET measurement` | One conversation, and the merchant's service quality |
-| `GET|POST conversations/{reference}/action-requests` | Asking another module to act, and what it said |
-| `GET|POST notes/{subject_kind}/{subject_ref}` | Notes about a conversation, an order, anything |
+| `GET` and `POST conversations/{reference}/action-requests` | Asking another module to act, and what it said |
+| `GET` and `POST notes/{subject_kind}/{subject_ref}` | Notes about a conversation, an order, anything |
 | `GET timelines/{subject_kind}/{subject_ref}` | The assembled timeline, naming every source that could not be asked |
 | `POST participant-records`, `POST erasures`, `POST redactions` | Export, erasure and retention |
 | `POST participant/conversations` | Opening one, and the only response that carries the claim |
 | `GET participant/conversations/{reference}` | Resuming one, with the claim |
-| `GET|POST participant/conversations/{reference}/messages` | The customer's view of the transcript |
+| `GET` and `POST participant/conversations/{reference}/messages` | The customer's view of the transcript |
 | `POST participant/conversations/{reference}/rating` | The rating, once, on a resolved conversation |
 
 Four abilities: `customer-service:read`, `:work`, `:act` and `:privacy`. Asking another module to
