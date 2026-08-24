@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Actions\OpenConversation;
@@ -11,7 +12,6 @@ use Liberu\Ecommerce\CustomerServiceWorkspace\Actions\PostMessage;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Actions\RecordRating;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Present;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Enums\Author;
-use Liberu\Ecommerce\CustomerServiceWorkspace\Models\Message;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Queries\FindConversation;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Queries\QueuePosition;
 
@@ -66,13 +66,13 @@ final class ParticipantConversationController extends ParticipantController
         $conversation = $find->forClaim($this->tenantId(), $reference, $this->claim());
 
         return new JsonResponse(Present::collection(
-            $conversation->messages()->get()->map(static fn (Message $m): array => Present::participantMessage($m))->all(),
+            $conversation->messages()->get()->map(static fn (Model $m): array => Present::participantMessage($m))->all(),
         ));
     }
 
     public function reply(string $reference, Request $request, FindConversation $find, PostMessage $post): JsonResponse
     {
-        $input = $this->validated($request, ['body' => ['present', 'string', 'max:20000']]);
+        $input = $this->validated($request, ['body' => ['present', 'nullable', 'string', 'max:20000']]);
         $conversation = $find->forClaim($this->tenantId(), $reference, $this->claim());
 
         return $this->respond(

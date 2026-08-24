@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Actions\RequestAction;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Present;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Scope;
-use Liberu\Ecommerce\CustomerServiceWorkspace\Models\ActionRequest;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Queries\FindConversation;
 
 /**
@@ -30,7 +29,7 @@ final class ActionRequestController extends AgentController
         $conversation = $find($this->tenantId(), $reference);
 
         return new JsonResponse(Present::collection(
-            $conversation->actionRequests()->get()->map(static fn (ActionRequest $r): array => Present::actionRequest($r))->all(),
+            $conversation->actionRequests()->get()->map(static fn (Model $r): array => Present::actionRequest($r))->all(),
         ));
     }
 
@@ -49,7 +48,9 @@ final class ActionRequestController extends AgentController
 
         $conversation = $find($this->tenantId(), $reference);
         $requestRef = $this->string($input, 'request_ref');
-        $payload = $input['payload'] ?? [];
+
+        /** @var array<string, mixed> $payload */
+        $payload = is_array($input['payload'] ?? null) ? $input['payload'] : [];
 
         $outcome = $ask(
             $this->tenantId(),
@@ -58,7 +59,7 @@ final class ActionRequestController extends AgentController
             $this->string($input, 'kind'),
             $this->string($input, 'target_ref'),
             $this->agentRef(),
-            is_array($payload) ? $payload : [],
+            $payload,
         );
 
         $record = $conversation->actionRequests()->where('request_ref', $requestRef)->first();

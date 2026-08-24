@@ -1,84 +1,66 @@
-# Ecommerce: Customer Service Workspace API
+# Ecommerce — Customer Service Workspace API
 
-> This optional API presentation package exposes approved HTTP operations for the Customer Service Workspace domain module. It presents exactly one independent module, delegates all authoritative behavior to that module's public actions/queries/policies, and contains no other module's API logic.
+An HTTP adapter over [`liberusoftware/ecommerce-customer-service-workspace`](https://github.com/liberusoftware/module-ecommerce-customer-service-workspace).
+It presents that module and holds no business rules of its own: every decision — who may read a
+conversation, whether a move is legal, what a figure means when it is missing — is the domain's, and
+this package is the transport.
 
-[Software](https://liberusoftware.com) ·
-[Hosting](https://liberuhosting.com) ·
-[Services](https://liberuservices.com) ·
-[Liberu Group](https://liberugroup.com)
+## What it owns
 
-![PHP](https://img.shields.io/badge/PHP-8.5-777BB4?logo=php&logoColor=white) ![Laravel](https://img.shields.io/badge/Laravel-13-FF2D20?logo=laravel&logoColor=white)
-[![Latest release](https://img.shields.io/github/v/release/liberusoftware/module-ecommerce-customer-service-workspace-api?sort=semver)](https://github.com/liberusoftware/module-ecommerce-customer-service-workspace-api/releases/latest) [![Tests](https://github.com/liberusoftware/module-ecommerce-customer-service-workspace-api/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/liberusoftware/module-ecommerce-customer-service-workspace-api/actions/workflows/tests.yml)
+Transport, and the three things the domain cannot decide for itself.
 
-## Features
+- **A rate limit on every route.** The domain counts no requests and cannot: it has no notion of a
+  caller. The host left the two endpoints that return a transcript and a customer's email
+  unthrottled, and this package closes that.
+- **A transport for the participant's claim.** The domain issues it once, in plaintext, and stores
+  only its hash. It travels in the `X-Participant-Claim` header — never in a path or a query string,
+  where the host put its only secret and where it landed in every access log and `Referer`.
+- **A classification of every failure.** Four exceptions and all nine refusal reasons map to a
+  status, a code and a message in one table, asserted exhaustive by test.
 
-- Fully compatible with **Laravel 13**, **PHP 8.5**, and **Pest 5**.
-- Built following the domain-driven design guidelines of the Liberu architecture.
-- Reusable, presenting a clean public contract and boundaries.
-- Adheres to the strict database, security, and authorization standards of Liberu.
+## What it does not own
 
-## Requirements
+Anything the domain decides. It computes no duration, derives no queue position, validates no score
+range and re-implements no state machine. Where the surface looked like it needed a rule — a score
+between one and five, an empty message body — the rule stayed in the domain and the surface passes
+the value through so there is one answer rather than two.
 
-- **PHP 8.5**
-- **Composer 2**
-- A supported database (e.g. MySQL, PostgreSQL, SQLite)
+It also owns nothing outside the module: orders, payments, shipments and returns arrive through the
+domain's unbound seams, and no adapter ships here.
 
-## Quick start
+## The fact that shaped it
 
-To install this package via Composer, run:
+The host's chat had two session identifiers and neither was the other: the widget minted one and
+searched by it, the server minted a different one and stored that. No customer could ever return to
+their own conversation. The module answers it with two values doing two jobs — a reference that names
+a conversation and a claim that proves standing to read it — and this surface must not reintroduce a
+third. It mints nothing. The merchant comes from the credential or from a request attribute the host
+resolved; the participant is named by the host; the reference and the claim are the module's.
 
-```bash
-composer require liberusoftware/module-ecommerce-customer-service-workspace-api
-```
+## What it publishes
+
+| | |
+|---|---|
+| `GET queue` | The conversations waiting, in arrival order, naming nobody |
+| `GET conversations/{reference}` | An agent's working view, with the queue position |
+| `GET|POST conversations/{reference}/messages` | The transcript, and an agent's line in it |
+| `POST conversations/{reference}/{assignment,resolution,abandonment}` | The three moves an agent makes |
+| `POST conversations/{reference}/read-receipts` | Marking the other side's lines read |
+| `GET conversations/{reference}/measurement`, `GET measurement` | One conversation, and the merchant's service quality |
+| `GET|POST conversations/{reference}/action-requests` | Asking another module to act, and what it said |
+| `GET|POST notes/{subject_kind}/{subject_ref}` | Notes about a conversation, an order, anything |
+| `GET timelines/{subject_kind}/{subject_ref}` | The assembled timeline, naming every source that could not be asked |
+| `POST participant-records`, `POST erasures`, `POST redactions` | Export, erasure and retention |
+| `POST participant/conversations` | Opening one, and the only response that carries the claim |
+| `GET participant/conversations/{reference}` | Resuming one, with the claim |
+| `GET|POST participant/conversations/{reference}/messages` | The customer's view of the transcript |
+| `POST participant/conversations/{reference}/rating` | The rating, once, on a resolved conversation |
+
+Four abilities: `customer-service:read`, `:work`, `:act` and `:privacy`. Asking another module to
+refund or cancel is its own ability, and so is erasing somebody.
 
 ## Documentation
 
-- [Liberu Main Documentation](https://github.com/liberusoftware/documentation)
-- [Architecture & Standards Index](https://github.com/liberusoftware/documentation/tree/main/architecture)
-
-## Related Liberu Projects
-
-| Project | Repository | Purpose |
-| --- | --- | --- |
-| **Boilerplate** | [liberusoftware/boilerplate-laravel](https://github.com/liberusoftware/boilerplate-laravel) | Shared Laravel application foundation and reference composition |
-| **CMS** | [liberu-cms/cms-laravel](https://github.com/liberu-cms/cms-laravel) | Structured content, publishing, media, multisite, and headless delivery |
-| **CRM** | [liberu-crm/crm-laravel](https://github.com/liberu-crm/crm-laravel) | Customer data, sales, marketing, service, and customer success |
-| **Billing** | [liberu-billing/billing-laravel](https://github.com/liberu-billing/billing-laravel) | Products, subscriptions, invoicing, payments, and provisioning |
-| **Accounting** | [liberu-accounting/accounting-laravel](https://github.com/liberu-accounting/accounting-laravel) | Ledgers, banking, tax, expenses, close, and financial reporting |
-| **Ecommerce** | [liberu-ecommerce/ecommerce-laravel](https://github.com/liberu-ecommerce/ecommerce-laravel) | Catalog, checkout, orders, fulfillment, returns, B2B, and omnichannel commerce |
-| **Control Panel** | [liberu-control-panel/control-panel-laravel](https://github.com/liberu-control-panel/control-panel-laravel) | Hosting, infrastructure, DNS, mail, databases, backups, and security operations |
-| **Automation** | [liberu-automation/automation-laravel](https://github.com/liberu-automation/automation-laravel) | Governed workflows, provider-neutral AI, approvals, and connectors |
-
-## Security
-
-Please do not report security vulnerabilities through public GitHub issues.
-Follow our [Security Policy](https://github.com/liberusoftware/documentation/blob/main/architecture/SECURITY.md) for private reporting and supported versions.
-
-## License
-
-This project is open-source software. You may use, modify, and distribute it
-under the terms described in [LICENSE.md](LICENSE.md).
-
-The linked license text is authoritative; this summary is not legal advice.
-
-## Feedback and contributing
-
-Feedback and contributions are welcome. You can help by reporting reproducible
-bugs, proposing focused enhancements, improving documentation or translations,
-and submitting tested code changes.
-
-Before contributing, please read [CONTRIBUTING.md](https://github.com/liberusoftware/documentation/blob/main/standards/CONTRIBUTING.md) and our
-[Code of Conduct](https://github.com/liberusoftware/documentation/blob/main/architecture/CODE_OF_CONDUCT.md). Search existing issues first, then use
-the appropriate issue template. Pull requests should explain the problem and
-approach, remain focused, include or update tests, pass the required workflows,
-and document user-visible or breaking changes.
-
-## Contributors
-
-Thank you to everyone who helps improve Liberu.
-
-<a href="https://github.com/liberusoftware/module-ecommerce-customer-service-workspace-api/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=liberusoftware/module-ecommerce-customer-service-workspace-api" alt="Contributors to liberusoftware/module-ecommerce-customer-service-workspace-api">
-</a>
-
-[View the full contributors graph](https://github.com/liberusoftware/module-ecommerce-customer-service-workspace-api/graphs/contributors).
+`docs/adoption.md` for installing and wiring it, `docs/domain.md` for every decision behind the
+surface, `docs/runbook.md` for what breaks and what it looks like. `resources/openapi/openapi.json`
+is the description, and `Unit\OpenApiParityTest` is what keeps it true.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -11,7 +12,6 @@ use Liberu\Ecommerce\CustomerServiceWorkspace\Actions\WriteNote;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Present;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Api\Http\Scope;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Enums\NoteVisibility;
-use Liberu\Ecommerce\CustomerServiceWorkspace\Models\Note;
 use Liberu\Ecommerce\CustomerServiceWorkspace\Queries\ListNotes;
 
 /**
@@ -28,7 +28,7 @@ final class NoteController extends AgentController
     public function index(string $subjectKind, string $subjectRef, ListNotes $notes): JsonResponse
     {
         return new JsonResponse(Present::collection(
-            $notes($this->tenantId(), $subjectKind, $subjectRef)->map(static fn (Note $note): array => Present::note($note))->all(),
+            $notes($this->tenantId(), $subjectKind, $subjectRef)->map(static fn (Model $note): array => Present::note($note))->all(),
         ));
     }
 
@@ -40,7 +40,7 @@ final class NoteController extends AgentController
     {
         $input = $this->validated($request, [
             'visibility' => ['required', Rule::in(array_column(NoteVisibility::cases(), 'value'))],
-            'body' => ['present', 'string', 'max:20000'],
+            'body' => ['present', 'nullable', 'string', 'max:20000'],
         ]);
 
         return $this->respond(

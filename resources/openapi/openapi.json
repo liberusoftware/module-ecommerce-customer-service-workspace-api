@@ -1,0 +1,2535 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Liberu Ecommerce \u2014 Customer Service Workspace API",
+        "version": "0.1.0",
+        "summary": "The conversation a customer starts with a merchant, and the workspace an agent answers it in.",
+        "description": "An HTTP adapter over the customer service workspace module. It holds no business rules: every decision here is the domain's.\n\n**There are two actor families and no route serves both.** An agent arrives with a credential carrying one of four abilities, and their merchant is read from it. A participant arrives with the claim the module issued them, under `/participant`, and their merchant is read from a request attribute the host set when it resolved the storefront host to a channel. The merchant is never accepted in a path, a query string or a body, and nothing is defaulted: an unresolved merchant answers 503 rather than guessing one.\n\n**The claim is served once.** Opening a conversation is the only response that carries it, in plaintext, because the module stores only its hash and has no path that re-issues one. Afterwards it travels in the `X-Participant-Claim` header \u2014 not a path segment, where the host put its only secret and where it reached every access log and every `Referer`, and not a cookie, which is ambient authority a browser attaches by itself and a second session identifier by another name.\n\n**There is no idempotency key on opening a conversation.** Serving a retry would mean serving a one-time secret twice. Every other write here already has a key the database enforces: the conversation's own reference, a rating bound one-to-one to a resolved conversation, and an action request's `request_ref`, unique per merchant.\n\n**Every route carries a rate limit**, in three bands: an agent's credentialled work, an anonymous participant's reads, and opening a conversation, which mints a queue row and that one-time secret. The host throttled four of its six chat endpoints and left open the two returning a transcript and a customer's email.\n\n**A refusal is a fact and this surface carries it.** A refused action request answers 4xx or 5xx **with the persisted request beside the error**, because the workspace asked and the row exists whatever the owning module said. A timeline missing a source answers 200 and names that source. A figure that has not happened is null, never 0. A queue position of null means not queued, which is not first.\n\n**Another merchant's reference, one that does not exist, and a claim that does not match are one 404 with one body.** A refusal that differed would publish the row.\n\nNo adapter ships here. Orders, payments, shipments and returns arrive through the domain's seams, and this package binds none of them.",
+        "license": {
+            "name": "MIT",
+            "identifier": "MIT"
+        }
+    },
+    "servers": [
+        {
+            "url": "/api/customer-service",
+            "description": "The default mount. A host may change the prefix, the domain and the middleware in configuration."
+        }
+    ],
+    "tags": [
+        {
+            "name": "Queue",
+            "description": "What is waiting, in arrival order."
+        },
+        {
+            "name": "Conversation",
+            "description": "An agent's working view: the transcript, the three moves, and the read receipts."
+        },
+        {
+            "name": "Note",
+            "description": "What an agent writes about a conversation, an order, or anything else."
+        },
+        {
+            "name": "Timeline",
+            "description": "Everything that happened to a subject, assembled from other modules at the moment of reading."
+        },
+        {
+            "name": "Measurement",
+            "description": "Service quality, as subtractions over recorded timestamps."
+        },
+        {
+            "name": "Action",
+            "description": "Asking the module that owns an order, a payment or a refund to act, and recording what it said."
+        },
+        {
+            "name": "Privacy",
+            "description": "Export, erasure and retention."
+        },
+        {
+            "name": "Participant",
+            "description": "The customer's five operations, proved by the claim they were issued."
+        }
+    ],
+    "paths": {
+        "/queue": {
+            "get": {
+                "operationId": "listQueue",
+                "summary": "The conversations waiting",
+                "description": "Arrival order within this merchant. The ordering is the queue, so no entry carries a number, and no entry carries a name or an email either.",
+                "tags": [
+                    "Queue"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The queue, in arrival order.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/QueueEntry"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "showConversation",
+                "summary": "An agent's view of one conversation",
+                "description": "The working view, with the name, the email and the derived queue position. A reference this merchant does not hold answers 404, identically to one that does not exist.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Conversation"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/messages": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "listMessages",
+                "summary": "The transcript",
+                "description": "Every line, in sequence. This is one of the two reads the host left unthrottled while returning a customer's email; it carries a limit here.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Message"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "postAgentMessage",
+                "summary": "An agent's line",
+                "description": "The first one stamps the moment time-to-first-response is measured from. An agent may not speak in a conversation nobody has taken \u2014 that would be a second, silent assignment path, and the host had two. Whether an empty body is a message is the domain's rule, and it answers 422 with it.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "body"
+                                ],
+                                "properties": {
+                                    "body": {
+                                        "type": "string",
+                                        "description": "What the agent says. Present, and refused by the domain when it is empty."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Written.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/read-receipts": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "post": {
+                "operationId": "markMessagesRead",
+                "summary": "Mark the customer's lines read",
+                "description": "The merchant is on the query itself. The host's equivalent took a bare conversation id and relied on its one caller having authorised first.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`count` is how many lines were marked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/assignment": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "post": {
+                "operationId": "assignSelf",
+                "summary": "Take the conversation",
+                "description": "The agent is the credential. No route here names another agent, so no credential can put work on somebody else. Taking a conversation already taken by the same agent is `already_recorded`; taking a resolved one is refused rather than reopening it.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/resolution": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "post": {
+                "operationId": "resolveConversation",
+                "summary": "Resolve it",
+                "description": "Resolving a conversation already resolved is `already_recorded`, not a second resolution with a new time.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/abandonment": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "post": {
+                "operationId": "abandonConversation",
+                "summary": "Abandon it in the queue",
+                "description": "A conversation nobody ever reached. It is measured, because the queue wait is the measurement \u2014 the host recorded nothing at all for exactly these.",
+                "tags": [
+                    "Conversation"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/measurement": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "showMeasurement",
+                "summary": "What this conversation cost the customer",
+                "description": "Three subtractions over recorded timestamps, every one of them from arrival. A figure that has not happened yet is null and is never 0.",
+                "tags": [
+                    "Measurement"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Measurement"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/conversations/{reference}/action-requests": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "listActionRequests",
+                "summary": "What was asked of other modules",
+                "description": "Every request this workspace made about this conversation, and what the owning module answered.",
+                "tags": [
+                    "Action"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:act"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ActionRequest"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "requestAction",
+                "summary": "Ask another module to act",
+                "description": "The workspace asks; the owning module acts. This package mutates no order, no payment and no refund. `request_ref` is yours and is unique per merchant, which is why a retry of a refund cannot authorise a second one \u2014 a replay answers `already_recorded` with the row that exists. Every answer here, including a refusal, carries the persisted request.",
+                "tags": [
+                    "Action"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:act"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "request_ref",
+                                    "kind",
+                                    "target_ref"
+                                ],
+                                "properties": {
+                                    "request_ref": {
+                                        "type": "string",
+                                        "description": "Your reference for this request, unique per merchant."
+                                    },
+                                    "kind": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                                        "description": "What you are asking for."
+                                    },
+                                    "target_ref": {
+                                        "type": "string",
+                                        "description": "What you are asking about."
+                                    },
+                                    "payload": {
+                                        "type": "object",
+                                        "description": "Whatever the owning module needs.",
+                                        "additionalProperties": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Recorded and confirmed by the owning module.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Already recorded under that reference.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The request was recorded and the transmission was not.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RefusedActionRequest"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The request was recorded and the transmission was not.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RefusedActionRequest"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The request was recorded and the transmission was not.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RefusedActionRequest"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/notes/{subject_kind}/{subject_ref}": {
+            "parameters": [
+                {
+                    "name": "subject_kind",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]*$"
+                    },
+                    "description": "What the subject is: `conversation`, `order`, anything a merchant annotates."
+                },
+                {
+                    "name": "subject_ref",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "An opaque reference this module never resolves."
+                }
+            ],
+            "get": {
+                "operationId": "listNotes",
+                "summary": "The notes about one subject",
+                "description": "A note's subject is an opaque reference, so one pair of operations serves a conversation, an order or anything else a merchant annotates.",
+                "tags": [
+                    "Note"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Note"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "writeNote",
+                "summary": "Write a note",
+                "description": "Written once. Publishing one to the customer is irreversible: the correction is another note, never an edit. `system` is accepted here and refused by the domain, because a system note has no author and no agent action can produce one.",
+                "tags": [
+                    "Note"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:work"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "visibility",
+                                    "body"
+                                ],
+                                "properties": {
+                                    "visibility": {
+                                        "$ref": "#/components/schemas/NoteVisibility"
+                                    },
+                                    "body": {
+                                        "type": "string",
+                                        "description": "The note."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/timelines/{subject_kind}/{subject_ref}": {
+            "parameters": [
+                {
+                    "name": "subject_kind",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]*$"
+                    },
+                    "description": "What the subject is: `conversation`, `order`, anything a merchant annotates."
+                },
+                {
+                    "name": "subject_ref",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "An opaque reference this module never resolves."
+                }
+            ],
+            "get": {
+                "operationId": "showTimeline",
+                "summary": "Everything that happened to one subject",
+                "description": "Assembled from named seams at the moment of reading, never copied into a local table. Orders, payments, shipments and returns each bind one and none is bound here, so a workspace with no bindings answers 200 and names the sources it could not ask rather than looking like a customer who did nothing.",
+                "tags": [
+                    "Timeline"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Timeline"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/measurement": {
+            "get": {
+                "operationId": "showSummary",
+                "summary": "This merchant's service quality",
+                "description": "Means over the conversations that have a figure. Conversations still open are excluded from every mean and counted, and a mean over nothing is null rather than 0.",
+                "tags": [
+                    "Measurement"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:read"
+                        ]
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Summary"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/participant-records": {
+            "post": {
+                "operationId": "exportParticipantRecord",
+                "summary": "Everything held about one person",
+                "description": "Export and erasure agree about what everything is. A person with nothing here answers 200 with an empty list.",
+                "tags": [
+                    "Privacy"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:privacy"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "participant_ref"
+                                ],
+                                "properties": {
+                                    "participant_ref": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ParticipantRecord"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/erasures": {
+            "post": {
+                "operationId": "forgetParticipant",
+                "summary": "Forget one person",
+                "description": "The name, the email, the transcript and the free-text feedback go. The conversation, its timings and its counts stay, so a service metric survives an erasure and a transcript does not. `count` is how many conversations were touched, and 0 is an honest answer rather than a failure.",
+                "tags": [
+                    "Privacy"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:privacy"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "participant_ref"
+                                ],
+                                "properties": {
+                                    "participant_ref": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/redactions": {
+            "post": {
+                "operationId": "redactResolvedBefore",
+                "summary": "Run the retention policy",
+                "description": "Redacts the words of conversations closed longer ago than the window. Retention is off unless a window is configured: an unconfigured run answers 503 rather than a quiet 0 that looks like a policy running against nothing. Whether a number of days is a window is the domain's rule.",
+                "tags": [
+                    "Privacy"
+                ],
+                "security": [
+                    {
+                        "bearer": [
+                            "customer-service:privacy"
+                        ]
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "days": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "The window, in days. Omit to use the configured one."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "No retention window is configured, so nothing was redacted. `retention_not_configured`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/InsufficientScope"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    }
+                }
+            }
+        },
+        "/participant/conversations": {
+            "post": {
+                "operationId": "openConversation",
+                "summary": "Open a conversation",
+                "description": "The one operation performed before a claim exists, and the one response that carries it. The merchant comes from the request the host resolved and the person from the name the host gave them; neither is accepted in the body. There is no idempotency key: serving a retry would mean serving a one-time secret twice, and the domain has no path that re-issues one.",
+                "tags": [
+                    "Participant"
+                ],
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "channel"
+                                ],
+                                "properties": {
+                                    "channel": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                                        "description": "Where the conversation is arriving from."
+                                    },
+                                    "name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "What the customer calls themselves."
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Where they can be reached."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Opened. Keep the claim: it is served once.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Opened"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/MerchantUnresolved"
+                    }
+                }
+            }
+        },
+        "/participant/conversations/{reference}": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "resumeConversation",
+                "summary": "Resume a conversation",
+                "description": "Resumption is a first-class operation, not a side effect of a lookup: the customer presents the claim they were issued. The host's widget searched by an identifier the server had never stored, so its resume path could not succeed. A reference that does not exist, one belonging to another merchant and a claim that does not match are one 404 with one body.",
+                "tags": [
+                    "Participant"
+                ],
+                "security": [
+                    {
+                        "participantClaim": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ParticipantConversation"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/MerchantUnresolved"
+                    }
+                }
+            }
+        },
+        "/participant/conversations/{reference}/messages": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "get": {
+                "operationId": "listParticipantMessages",
+                "summary": "The customer's view of the transcript",
+                "description": "What was said, without the internal account that said it. This is the second of the two reads the host left unthrottled; it carries the participant limit here.",
+                "tags": [
+                    "Participant"
+                ],
+                "security": [
+                    {
+                        "participantClaim": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ParticipantMessage"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/MerchantUnresolved"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "postParticipantMessage",
+                "summary": "Say something",
+                "description": "A closed conversation is refused rather than reopened.",
+                "tags": [
+                    "Participant"
+                ],
+                "security": [
+                    {
+                        "participantClaim": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "body"
+                                ],
+                                "properties": {
+                                    "body": {
+                                        "type": "string",
+                                        "description": "What the customer says."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/MerchantUnresolved"
+                    }
+                }
+            }
+        },
+        "/participant/conversations/{reference}/rating": {
+            "parameters": [
+                {
+                    "name": "reference",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The conversation's reference."
+                }
+            ],
+            "post": {
+                "operationId": "rateConversation",
+                "summary": "Rate a resolved conversation",
+                "description": "Bound to a resolved conversation and given once, arbitrated by a unique index rather than a read-then-write. A second rating answers `already_recorded`; a rating on an unresolved conversation is refused. The host thanked people for ratings it discarded. What range a score may take is the domain's rule, so a score outside it answers 422 from one place rather than two.",
+                "tags": [
+                    "Participant"
+                ],
+                "security": [
+                    {
+                        "participantClaim": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "score"
+                                ],
+                                "properties": {
+                                    "score": {
+                                        "type": "integer",
+                                        "description": "The score. The range is the domain's."
+                                    },
+                                    "feedback": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Free text. Erasure removes it and leaves the score."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The answer.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Already rated.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Outcome"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/TooManyRequests"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/MerchantUnresolved"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearer": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "An agent's credential. It carries one or more of `customer-service:read`, `:work`, `:act` and `:privacy`, and the merchant it belongs to."
+            },
+            "participantClaim": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Participant-Claim",
+                "description": "The claim the module issued when the conversation was opened. It is served once and never again, and it is a header rather than a path segment so it does not reach an access log or a Referer."
+            }
+        },
+        "responses": {
+            "Unauthenticated": {
+                "description": "No credential arrived. `unauthenticated`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "InsufficientScope": {
+                "description": "The credential carries neither the ability this operation requires nor a merchant. `insufficient_scope` or `actor_has_no_merchant`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "One answer for three things: no such reference, a reference belonging to another merchant, and a claim that does not match. A refusal that differed would publish the row. `not_found`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "ValidationFailed": {
+                "description": "The request did not satisfy this endpoint, or the domain refused the value in it. `validation_failed`, `invalid_body`, `score_out_of_range`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "MerchantUnresolved": {
+                "description": "This deployment resolved no merchant for the request, or named nobody as the person making it. Nothing was read and nothing was written. `no_merchant_resolved`, `no_participant_resolved`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "TooManyRequests": {
+                "description": "The limit for this band is spent. Every route here carries one, including the reads that return a transcript and a customer's email.",
+                "headers": {
+                    "Retry-After": {
+                        "description": "Seconds until the limit resets.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    "X-RateLimit-Limit": {
+                        "description": "The band's allowance.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "Conflict": {
+                "description": "The domain refused: the move is not legal from this state, the conversation is closed, the rating already exists or the conversation is not resolved, the author may not write that, or the owning module said no. `illegal_transition`, `conversation_closed`, `not_resolved`, `author_may_not_write`, `gateway_refused`, `invalid_transition`, `append_only`.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            }
+        },
+        "schemas": {
+            "Error": {
+                "type": "object",
+                "required": [
+                    "error"
+                ],
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "required": [
+                            "code",
+                            "message",
+                            "resubmittable"
+                        ],
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "A stable identifier for the failure. `not_found`, `illegal_transition`, `no_gateway_bound`, `retention_not_configured`, `score_out_of_range`, `conversation_closed`, `not_resolved`, `author_may_not_write`, `gateway_unreachable`, `gateway_refused`, `invalid_body`, `invalid_transition`, `append_only`, `validation_failed`, `unauthenticated`, `insufficient_scope`, `actor_has_no_merchant`, `no_merchant_resolved`, `no_participant_resolved`."
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "What happened, in one sentence. It never names a record that exists."
+                            },
+                            "resubmittable": {
+                                "type": "boolean",
+                                "description": "Whether a request of this shape could succeed later. A refusal the caller cannot change their way out of is false."
+                            },
+                            "fields": {
+                                "type": "object",
+                                "description": "Present on `validation_failed` only.",
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "ConversationState": {
+                "type": "string",
+                "enum": [
+                    "queued",
+                    "assigned",
+                    "resolved",
+                    "abandoned"
+                ],
+                "description": "Queued to assigned to resolved, plus abandoned from queued. Resolved and abandoned are terminal: assigning an agent to a resolved conversation is a refusal, not a reopen."
+            },
+            "Author": {
+                "type": "string",
+                "enum": [
+                    "customer",
+                    "agent",
+                    "system"
+                ],
+                "description": "Who said it. A system line has no author reference."
+            },
+            "NoteVisibility": {
+                "type": "string",
+                "enum": [
+                    "internal",
+                    "customer_visible",
+                    "system"
+                ],
+                "description": "A customer-visible note is a publication and is irreversible. A system note has no author and no agent action can produce one."
+            },
+            "Recording": {
+                "type": "string",
+                "enum": [
+                    "recorded",
+                    "already_recorded",
+                    "refused"
+                ],
+                "description": "Which of the three things a write did. A write that did not happen is a different outcome from one that did."
+            },
+            "RefusalReason": {
+                "type": "string",
+                "enum": [
+                    "illegal_transition",
+                    "conversation_closed",
+                    "not_resolved",
+                    "score_out_of_range",
+                    "author_may_not_write",
+                    "gateway_unbound",
+                    "gateway_unreachable",
+                    "gateway_refused",
+                    "retention_not_configured"
+                ],
+                "description": "Why a write did not happen, as a value rather than prose. Every one of the nine is classified to a status."
+            },
+            "Outcome": {
+                "type": "object",
+                "required": [
+                    "recording",
+                    "reason",
+                    "id",
+                    "count"
+                ],
+                "properties": {
+                    "recording": {
+                        "$ref": "#/components/schemas/Recording"
+                    },
+                    "reason": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/RefusalReason"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "Set when `recording` is `refused`, and null otherwise."
+                    },
+                    "id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The row written, where there is one row."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "How many rows the write touched. Zero when nothing was written."
+                    }
+                }
+            },
+            "QueueEntry": {
+                "type": "object",
+                "required": [
+                    "reference",
+                    "channel",
+                    "state",
+                    "queued_at",
+                    "resolved_at",
+                    "abandoned_at"
+                ],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": "The conversation's own name. It proves nothing: standing is proved by the claim."
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Where the conversation arrived from."
+                    },
+                    "state": {
+                        "$ref": "#/components/schemas/ConversationState"
+                    },
+                    "queued_at": {
+                        "type": "string",
+                        "description": "When it arrived. Every duration is measured from here, not from assignment.",
+                        "format": "date-time"
+                    },
+                    "resolved_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null until resolved."
+                    },
+                    "abandoned_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null unless it was abandoned in the queue."
+                    }
+                },
+                "description": "A conversation waiting. It carries no name and no email: an agent who has not opened it has no reason to read them."
+            },
+            "Conversation": {
+                "type": "object",
+                "required": [
+                    "reference",
+                    "channel",
+                    "state",
+                    "queued_at",
+                    "resolved_at",
+                    "abandoned_at",
+                    "participant_ref",
+                    "participant_name",
+                    "participant_email",
+                    "agent_ref",
+                    "assigned_at",
+                    "first_agent_reply_at",
+                    "forgotten_at",
+                    "redacted_at",
+                    "queue_position"
+                ],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": "The conversation's own name. It proves nothing: standing is proved by the claim."
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Where the conversation arrived from."
+                    },
+                    "state": {
+                        "$ref": "#/components/schemas/ConversationState"
+                    },
+                    "queued_at": {
+                        "type": "string",
+                        "description": "When it arrived. Every duration is measured from here, not from assignment.",
+                        "format": "date-time"
+                    },
+                    "resolved_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null until resolved."
+                    },
+                    "abandoned_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null unless it was abandoned in the queue."
+                    },
+                    "participant_ref": {
+                        "type": "string",
+                        "description": "The host's name for the person. An opaque reference this module never resolves."
+                    },
+                    "participant_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null when never given, or when the participant has been forgotten."
+                    },
+                    "participant_email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null when never given, or when the participant has been forgotten."
+                    },
+                    "agent_ref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null while nobody has taken it."
+                    },
+                    "assigned_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Set once, on the first assignment. A handover does not restart the clock."
+                    },
+                    "first_agent_reply_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "When an agent first said something. This, and not assignment, is what time-to-first-response measures from."
+                    },
+                    "forgotten_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "When the participant was erased. The timings and the counts survive it."
+                    },
+                    "redacted_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "When the transcript was redacted, by erasure or by retention."
+                    },
+                    "queue_position": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The place in this merchant's queue, derived from arrival order and never stored. Null means not queued \u2014 which is not position 0, and never 1."
+                    }
+                }
+            },
+            "ParticipantConversation": {
+                "type": "object",
+                "required": [
+                    "reference",
+                    "channel",
+                    "state",
+                    "queued_at",
+                    "resolved_at",
+                    "abandoned_at",
+                    "queue_position"
+                ],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": "The conversation's own name. It proves nothing: standing is proved by the claim."
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Where the conversation arrived from."
+                    },
+                    "state": {
+                        "$ref": "#/components/schemas/ConversationState"
+                    },
+                    "queued_at": {
+                        "type": "string",
+                        "description": "When it arrived. Every duration is measured from here, not from assignment.",
+                        "format": "date-time"
+                    },
+                    "resolved_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null until resolved."
+                    },
+                    "abandoned_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null unless it was abandoned in the queue."
+                    },
+                    "queue_position": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The place in this merchant's queue, derived from arrival order and never stored. Null means not queued \u2014 which is not position 0, and never 1."
+                    }
+                },
+                "description": "The customer's own view. No name, no email, no agent reference: they gave the first two and have no use for the third."
+            },
+            "Opened": {
+                "type": "object",
+                "required": [
+                    "reference",
+                    "claim"
+                ],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": "The conversation's name, used in every later path."
+                    },
+                    "claim": {
+                        "type": "string",
+                        "description": "The proof of standing. It is served once, in plaintext, here and in no other response ever. The module stores only its hash and has no path that re-issues one: a client that loses it has lost the conversation. Present it afterwards in the `X-Participant-Claim` header. This is why opening accepts no idempotency key \u2014 serving a retry would mean serving a one-time secret twice."
+                    }
+                }
+            },
+            "Message": {
+                "type": "object",
+                "required": [
+                    "sequence",
+                    "author",
+                    "body",
+                    "sent_at",
+                    "redacted",
+                    "author_ref",
+                    "read_at"
+                ],
+                "properties": {
+                    "sequence": {
+                        "type": "integer",
+                        "description": "Position in the transcript, allocated under a lock."
+                    },
+                    "author": {
+                        "$ref": "#/components/schemas/Author"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The line. A redacted line keeps its row and its timestamps and loses its words."
+                    },
+                    "sent_at": {
+                        "type": "string",
+                        "description": "When it was said.",
+                        "format": "date-time"
+                    },
+                    "redacted": {
+                        "type": "boolean",
+                        "description": "Whether the words are gone. The row never is."
+                    },
+                    "author_ref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The internal account that wrote it. Null on a system line."
+                    },
+                    "read_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null until the other side marked it read."
+                    }
+                }
+            },
+            "ParticipantMessage": {
+                "type": "object",
+                "required": [
+                    "sequence",
+                    "author",
+                    "body",
+                    "sent_at",
+                    "redacted"
+                ],
+                "properties": {
+                    "sequence": {
+                        "type": "integer",
+                        "description": "Position in the transcript, allocated under a lock."
+                    },
+                    "author": {
+                        "$ref": "#/components/schemas/Author"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The line. A redacted line keeps its row and its timestamps and loses its words."
+                    },
+                    "sent_at": {
+                        "type": "string",
+                        "description": "When it was said.",
+                        "format": "date-time"
+                    },
+                    "redacted": {
+                        "type": "boolean",
+                        "description": "Whether the words are gone. The row never is."
+                    }
+                },
+                "description": "What was said, without the internal account that said it."
+            },
+            "Note": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "subject_kind",
+                    "subject_ref",
+                    "visibility",
+                    "author_ref",
+                    "body",
+                    "written_at",
+                    "redacted"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "subject_kind": {
+                        "type": "string",
+                        "description": "What the note is about: a conversation, an order, anything a merchant annotates."
+                    },
+                    "subject_ref": {
+                        "type": "string",
+                        "description": "An opaque reference this module never resolves."
+                    },
+                    "visibility": {
+                        "$ref": "#/components/schemas/NoteVisibility"
+                    },
+                    "author_ref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null on a system note, which is the module's own."
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The note. Written once: a correction is another note, never an edit."
+                    },
+                    "written_at": {
+                        "type": "string",
+                        "description": "When it was written.",
+                        "format": "date-time"
+                    },
+                    "redacted": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ActionRequest": {
+                "type": "object",
+                "required": [
+                    "request_ref",
+                    "kind",
+                    "target_ref",
+                    "agent_ref",
+                    "state",
+                    "remote_ref",
+                    "message",
+                    "requested_at",
+                    "settled_at"
+                ],
+                "properties": {
+                    "request_ref": {
+                        "type": "string",
+                        "description": "The caller's reference, unique per merchant. It is the reason a retry of a refund cannot authorise a second one."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "What was asked for."
+                    },
+                    "target_ref": {
+                        "type": "string",
+                        "description": "What it was asked about."
+                    },
+                    "agent_ref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The agent who asked."
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "requested",
+                            "confirmed",
+                            "refused"
+                        ],
+                        "description": "`requested` means the row exists and the owning module has not answered."
+                    },
+                    "remote_ref": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "What the owning module called it, when it accepted."
+                    },
+                    "message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "What the owning module said, when it refused."
+                    },
+                    "requested_at": {
+                        "type": "string",
+                        "description": "When the workspace recorded the request. It is written before anything is transmitted.",
+                        "format": "date-time"
+                    },
+                    "settled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null while nobody has answered."
+                    }
+                }
+            },
+            "RefusedActionRequest": {
+                "type": "object",
+                "required": [
+                    "error",
+                    "data"
+                ],
+                "description": "The request was written and the transmission was not. Reading the status alone would say the opposite of what happened, so the record travels beside the error.",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "required": [
+                            "code",
+                            "message",
+                            "resubmittable"
+                        ],
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "A stable identifier for the failure. `not_found`, `illegal_transition`, `no_gateway_bound`, `retention_not_configured`, `score_out_of_range`, `conversation_closed`, `not_resolved`, `author_may_not_write`, `gateway_unreachable`, `gateway_refused`, `invalid_body`, `invalid_transition`, `append_only`, `validation_failed`, `unauthenticated`, `insufficient_scope`, `actor_has_no_merchant`, `no_merchant_resolved`, `no_participant_resolved`."
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "What happened, in one sentence. It never names a record that exists."
+                            },
+                            "resubmittable": {
+                                "type": "boolean",
+                                "description": "Whether a request of this shape could succeed later. A refusal the caller cannot change their way out of is false."
+                            },
+                            "fields": {
+                                "type": "object",
+                                "description": "Present on `validation_failed` only.",
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "data": {
+                        "type": "object",
+                        "required": [
+                            "request"
+                        ],
+                        "properties": {
+                            "request": {
+                                "$ref": "#/components/schemas/ActionRequest"
+                            }
+                        }
+                    }
+                }
+            },
+            "TimelineEntry": {
+                "type": "object",
+                "required": [
+                    "source",
+                    "kind",
+                    "occurred_at",
+                    "reference",
+                    "payload"
+                ],
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Which module holds it."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "What kind of thing happened."
+                    },
+                    "occurred_at": {
+                        "type": "string",
+                        "description": "When.",
+                        "format": "date-time"
+                    },
+                    "reference": {
+                        "type": "string",
+                        "description": "That module's name for it."
+                    },
+                    "payload": {
+                        "type": "object",
+                        "description": "Whatever that module chose to say about it.",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "Timeline": {
+                "type": "object",
+                "required": [
+                    "entries",
+                    "answered",
+                    "skipped",
+                    "complete"
+                ],
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TimelineEntry"
+                        },
+                        "description": "Assembled at the moment of reading, in time order. Nothing here is copied into a local table, so nothing here can go stale."
+                    },
+                    "answered": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The sources that answered, by name."
+                    },
+                    "skipped": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The sources that did not, by name \u2014 unbound in this deployment, or failing. They are named rather than counted as having answered nothing."
+                    },
+                    "complete": {
+                        "type": "boolean",
+                        "description": "False when `skipped` is not empty. A short timeline is never silently a quiet customer."
+                    }
+                }
+            },
+            "Measurement": {
+                "type": "object",
+                "required": [
+                    "wait_seconds",
+                    "first_reply_seconds",
+                    "resolution_seconds",
+                    "abandoned",
+                    "rating",
+                    "measured"
+                ],
+                "properties": {
+                    "wait_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Arrival to the moment somebody reached it. Null until it has happened. Never 0, which would read as instant service."
+                    },
+                    "first_reply_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Arrival to the first agent line \u2014 not to assignment, which is what the host measured under this name. Null until it has happened. Never 0, which would read as instant service."
+                    },
+                    "resolution_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Arrival to close. It includes the queue wait, which the host excluded. Null until it has happened. Never 0, which would read as instant service."
+                    },
+                    "abandoned": {
+                        "type": "boolean",
+                        "description": "A conversation nobody ever reached. It is measured, because the queue wait is the measurement."
+                    },
+                    "rating": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The score the customer gave. Null means none was given, which is a fact and not a zero."
+                    },
+                    "measured": {
+                        "type": "boolean",
+                        "description": "False while the conversation is still open. An open conversation is excluded from every mean and counted."
+                    }
+                }
+            },
+            "Summary": {
+                "type": "object",
+                "required": [
+                    "measured",
+                    "unmeasured",
+                    "abandoned",
+                    "average_wait_seconds",
+                    "average_first_reply_seconds",
+                    "average_resolution_seconds",
+                    "average_rating",
+                    "rated"
+                ],
+                "properties": {
+                    "measured": {
+                        "type": "integer"
+                    },
+                    "unmeasured": {
+                        "type": "integer",
+                        "description": "Still open. Reported rather than hidden, and excluded from every mean."
+                    },
+                    "abandoned": {
+                        "type": "integer"
+                    },
+                    "average_wait_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Null when nothing has a figure. Never 0."
+                    },
+                    "average_first_reply_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Null when nothing has a figure. Never 0."
+                    },
+                    "average_resolution_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Null when nothing has a figure. Never 0."
+                    },
+                    "average_rating": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "Null when nobody has rated. Never 0."
+                    },
+                    "rated": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "ParticipantRecord": {
+                "type": "object",
+                "required": [
+                    "participant_ref",
+                    "conversations"
+                ],
+                "description": "Export and erasure name the same rows and the same fields: anything here is what erasure redacts, and nothing else is.",
+                "properties": {
+                    "participant_ref": {
+                        "type": "string"
+                    },
+                    "conversations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

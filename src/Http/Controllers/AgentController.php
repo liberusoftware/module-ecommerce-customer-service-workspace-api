@@ -52,8 +52,10 @@ abstract class AgentController extends Controller
             return $this->refuse(403, 'actor_has_no_merchant', 'This credential is not attached to a merchant.');
         }
 
+        $identifier = $user->getAuthIdentifier();
+
         $this->holdTenant((string) $merchant);
-        $this->agentRef = (string) $user->getAuthIdentifier();
+        $this->agentRef = is_scalar($identifier) ? (string) $identifier : '';
 
         return null;
     }
